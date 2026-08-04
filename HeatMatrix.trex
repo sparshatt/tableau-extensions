@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest manifest-version="0.1" xmlns="http://www.tableau.com/xml/extension_manifest">
+  <dashboard-extension id="com.wealthvista.heatmatrix" extension-version="0.1.0">
+    <default-locale>en_US</default-locale>
+    <name resource-id="name"/>
+    <description>HeatMatrix — a configurable matrix heat map (bevel, gaps, diverging palettes, rich number formatting)</description>
+    <author name="Maximilian Sparshatt" email="max.sparshatt@wealthvista.com" organization="WealthVista" website="https://www.wealthvista.com"/>
+    <min-api-version>1.4</min-api-version>
+    <source-location>
+      <url>http://localhost:8765/index.html</url>
+    </source-location>
+    <icon>iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAP0lEQVR4nGP8//8/AyWAiYFCMGoAAwODAgMDw38i8H+GBhgNAxg1gIFhNAwYGEbDgIFhNAwYGEbDgIFhOIQBAJTkI/FVBl1FAAAAAElFTkSuQmCC</icon>
+    <permissions>
+      <permission>full data</permission>
+    </permissions>
+    <context-menu>
+      <configure-context-menu-item/>
+    </context-menu>
+  </dashboard-extension>
+  <resources>
+    <resource id="name">
+      <text locale="en_US">HeatMatrix</text>
+    </resource>
+  </resources>
+</manifest>
