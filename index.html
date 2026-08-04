@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>HeatMatrix — Tableau Dashboard Extension</title>
+<script src="https://tableau.github.io/extensions-api/lib/tableau.extensions.1.latest.js"></script>
+<style>
+  :root{
+    --ink:#333b44; --ink2:#6b7580; --muted:#9aa3ad; --line:#e3e7eb; --surface:#ffffff;
+    --panel:#f7f8fa; --accent:#2a6db0;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{width:100%;height:100%;}
+  body{
+    font-family:"Tableau Book","Tableau Regular",-apple-system,"Segoe UI",Arial,sans-serif;
+    color:var(--ink); background:var(--surface); overflow:hidden; font-size:12px;
+  }
+  #app{display:flex; width:100%; height:100%;}
+  #chartWrap{flex:1 1 auto; display:flex; flex-direction:column; min-width:0; padding:10px 12px 8px 12px;}
+  #chartTitle{font-size:13px; font-weight:bold; color:var(--ink); margin-bottom:6px; display:none;}
+  #matrixOuter{flex:1 1 auto; position:relative; min-height:0;}
+  #matrix{position:absolute; inset:0;}
+  svg text{user-select:none;}
+
+  /* gear */
+  #gearBtn{
+    position:absolute; top:8px; right:8px; z-index:30; width:28px; height:28px; border-radius:6px;
+    border:1px solid var(--line); background:rgba(255,255,255,.92); cursor:pointer; color:var(--ink2);
+    display:flex; align-items:center; justify-content:center; opacity:0; transition:opacity .15s;
+    font-size:15px;
+  }
+  body:hover #gearBtn{opacity:1;}
+  #gearBtn:hover{color:var(--ink); border-color:#c9cfd6;}
+
+  /* format panel */
+  #panel{
+    width:272px; flex:0 0 272px; border-left:1px solid var(--line); background:var(--panel);
+    display:none; flex-direction:column; height:100%;
+  }
+  #panel.open{display:flex;}
+  #panelHead{display:flex; align-items:center; justify-content:space-between; padding:10px 12px 0 12px;}
+  #panelHead h2{font-size:13px; font-weight:bold;}
+  #closeBtn{border:none; background:none; cursor:pointer; color:var(--ink2); font-size:14px;}
+  #tabs{display:flex; gap:2px; padding:8px 12px 0 12px; border-bottom:1px solid var(--line);}
+  .tab{
+    padding:6px 10px; font-size:11.5px; color:var(--ink2); cursor:pointer; border:none; background:none;
+    border-bottom:2px solid transparent;
+  }
+  .tab.active{color:var(--accent); border-bottom-color:var(--accent); font-weight:bold;}
+  #panelBody{flex:1 1 auto; overflow-y:auto; padding:12px;}
+  .sec{display:none;}
+  .sec.active{display:block;}
+  .fld{margin-bottom:12px;}
+  .fld label{display:block; font-size:11px; color:var(--ink2); margin-bottom:4px;}
+  .fld select,.fld input[type=text],.fld input[type=number]{
+    width:100%; padding:5px 6px; border:1px solid var(--line); border-radius:4px; background:#fff;
+    font-size:12px; color:var(--ink); font-family:inherit;
+  }
+  .fld input[type=range]{width:100%;}
+  .rangeRow{display:flex; align-items:center; gap:8px;}
+  .rangeRow output{width:34px; text-align:right; font-size:11px; color:var(--ink2);}
+  .row2{display:flex; gap:8px;}
+  .row2 .fld{flex:1;}
+  .chk{display:flex; align-items:center; gap:6px; margin-bottom:10px; font-size:12px; color:var(--ink);}
+  .chk input{accent-color:var(--accent);}
+  .hint{font-size:10.5px; color:var(--muted); margin-top:3px; line-height:1.35;}
+  .divider{border-top:1px solid var(--line); margin:14px 0;}
+  .swatchRow{display:flex; height:14px; border-radius:3px; overflow:hidden; margin-top:5px; border:1px solid var(--line);}
+  .swatchRow div{flex:1;}
+  #status{
+    position:absolute; left:12px; bottom:6px; font-size:10px; color:var(--muted); z-index:5; pointer-events:none;
+  }
+  /* tooltip */
+  #tip{
+    position:fixed; z-index:99; pointer-events:none; display:none; background:#fff; border:1px solid var(--line);
+    border-radius:6px; box-shadow:0 4px 14px rgba(30,40,50,.14); padding:8px 10px; font-size:11.5px; max-width:260px;
+  }
+  #tip .t1{color:var(--ink2); margin-bottom:2px;}
+  #tip .t2{font-weight:bold; font-size:13px;}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="chartWrap">
+    <div id="chartTitle"></div>
+    <div id="matrixOuter"><div id="matrix"></div></div>
+    <div id="status"></div>
+  </div>
+
+  <div id="panel">
+    <div id="panelHead"><h2>Format HeatMatrix</h2><button id="closeBtn" title="Close">✕</button></div>
+    <div id="tabs">
+      <button class="tab active" data-sec="general">General</button>
+      <button class="tab" data-sec="axis">Axis</button>
+      <button class="tab" data-sec="text">Text</button>
+      <button class="tab" data-sec="legend">Legend</button>
+    </div>
+    <div id="panelBody">
+
+      <!-- GENERAL -->
+      <div class="sec active" id="sec-general">
+        <div class="fld"><label>Worksheet (data source)</label><select id="optSheet"></select>
+          <div class="hint">Add a sheet with your two dimensions and one measure to the dashboard; it can be hidden behind the extension.</div></div>
+        <div class="fld"><label>Rows</label><select id="optRowDim"></select></div>
+        <div class="fld"><label>Columns</label><select id="optColDim"></select></div>
+        <div class="fld"><label>Measure (color by)</label><select id="optMeasure"></select></div>
+        <div class="divider"></div>
+        <div class="fld"><label>Color sequence</label>
+          <select id="optPalette">
+            <option value="gwr">Green – White – Red</option>
+            <option value="gyr">Green – Yellow – Red</option>
+            <option value="rwg">Red – White – Green</option>
+            <option value="ryg">Red – Yellow – Green</option>
+            <option value="bwr">Blue – White – Red (colorblind-safe)</option>
+            <option value="pwg">Purple – White – Green (colorblind-safe)</option>
+          </select>
+          <div class="swatchRow" id="palettePreview"></div>
+        </div>
+        <div class="row2">
+          <div class="fld"><label>Center point</label>
+            <select id="optCenterMode">
+              <option value="auto">Auto (data midpoint)</option>
+              <option value="zero">Zero</option>
+              <option value="median">Median</option>
+              <option value="custom">Custom…</option>
+            </select></div>
+          <div class="fld"><label>Custom center</label><input type="number" id="optCenterValue" value="0" step="any"/></div>
+        </div>
+        <div class="divider"></div>
+        <div class="fld"><label>Bevel (corner rounding)</label>
+          <div class="rangeRow"><input type="range" id="optBevel" min="0" max="24" step="1" value="4"/><output id="outBevel">4px</output></div></div>
+        <div class="fld"><label>Buffer (gap between cells)</label>
+          <div class="rangeRow"><input type="range" id="optGap" min="0" max="14" step="1" value="2"/><output id="outGap">2px</output></div></div>
+      </div>
+
+      <!-- AXIS -->
+      <div class="sec" id="sec-axis">
+        <div class="chk"><input type="checkbox" id="optShowRowLabels" checked/><label for="optShowRowLabels">Show row labels</label></div>
+        <div class="chk"><input type="checkbox" id="optShowColLabels" checked/><label for="optShowColLabels">Show column labels</label></div>
+        <div class="fld"><label>Column label angle</label>
+          <select id="optColAngle"><option value="0">Horizontal</option><option value="45">45°</option><option value="90">Vertical</option></select></div>
+        <div class="row2">
+          <div class="fld"><label>Axis font size</label><input type="number" id="optAxisSize" min="7" max="20" value="11"/></div>
+          <div class="fld"><label>Axis color</label><input type="text" id="optAxisColor" value="#6b7580"/></div>
+        </div>
+        <div class="fld"><label>Sort rows</label>
+          <select id="optSortRows"><option value="alpha">A → Z</option><option value="alphaDesc">Z → A</option><option value="valueDesc">By value (high → low)</option><option value="valueAsc">By value (low → high)</option></select></div>
+        <div class="fld"><label>Sort columns</label>
+          <select id="optSortCols"><option value="alpha">A → Z</option><option value="alphaDesc">Z → A</option><option value="valueDesc">By value (high → low)</option><option value="valueAsc">By value (low → high)</option></select></div>
+      </div>
+
+      <!-- TEXT -->
+      <div class="sec" id="sec-text">
+        <div class="chk"><input type="checkbox" id="optShowValues" checked/><label for="optShowValues">Show values in cells</label></div>
+        <div class="row2">
+          <div class="fld"><label>Denomination</label>
+            <select id="optDenom"><option value="auto">Auto</option><option value="none">None (raw)</option><option value="K">Thousands (K)</option><option value="M">Millions (M)</option><option value="B">Billions (B)</option></select></div>
+          <div class="fld"><label>Decimals</label>
+            <select id="optDecimals"><option>0</option><option selected>1</option><option>2</option><option>3</option></select></div>
+        </div>
+        <div class="row2">
+          <div class="fld"><label>Prefix</label>
+            <select id="optPrefix"><option value="">None</option><option value="$">$</option><option value="€">€</option><option value="£">£</option><option value="custom">Custom…</option></select></div>
+          <div class="fld"><label>Custom prefix</label><input type="text" id="optPrefixCustom" maxlength="4" placeholder="e.g. ¥"/></div>
+        </div>
+        <div class="fld"><label>Font</label>
+          <select id="optFont">
+            <option value='"Tableau Book","Tableau Regular",Arial,sans-serif'>Tableau Book</option>
+            <option value='"Tableau Regular",Arial,sans-serif'>Tableau Regular</option>
+            <option value='"Tableau Semibold",Arial,sans-serif'>Tableau Semibold</option>
+            <option value='Arial,sans-serif'>Arial</option>
+            <option value='Verdana,sans-serif'>Verdana</option>
+            <option value='"Trebuchet MS",sans-serif'>Trebuchet MS</option>
+            <option value='Georgia,serif'>Georgia</option>
+            <option value='"Times New Roman",serif'>Times New Roman</option>
+            <option value='"Courier New",monospace'>Courier New</option>
+          </select></div>
+        <div class="row2">
+          <div class="fld"><label>Value font size</label>
+            <select id="optValueSize"><option value="auto" selected>Auto-fit</option><option>8</option><option>9</option><option>10</option><option>11</option><option>12</option><option>14</option><option>16</option></select></div>
+          <div class="fld"><label>Value color</label>
+            <select id="optValueColor"><option value="auto" selected>Auto contrast</option><option value="#333b44">Dark</option><option value="#ffffff">White</option></select></div>
+        </div>
+        <div class="chk"><input type="checkbox" id="optBoldValues"/><label for="optBoldValues">Bold values</label></div>
+      </div>
+
+      <!-- LEGEND -->
+      <div class="sec" id="sec-legend">
+        <div class="chk"><input type="checkbox" id="optShowLegend" checked/><label for="optShowLegend">Show legend</label></div>
+        <div class="fld"><label>Position</label>
+          <select id="optLegendPos"><option value="bottom">Bottom</option><option value="right">Right</option></select></div>
+        <div class="fld"><label>Legend title</label><input type="text" id="optLegendTitle" placeholder="(measure name)"/></div>
+        <div class="chk"><input type="checkbox" id="optLegendValues" checked/><label for="optLegendValues">Show min / center / max values</label></div>
+      </div>
+
+    </div>
+  </div>
+</div>
+<button id="gearBtn" title="Format extension">⚙</button>
+<div id="tip"><div class="t1"></div><div class="t2"></div></div>
+
+<script>
+"use strict";
+/* ============================================================
+   HeatMatrix v0.1 — matrix heat map dashboard extension
+   Runs inside Tableau (Extensions API) or standalone (demo data)
+   ============================================================ */
+
+const PALETTES = {
+  gwr:{stops:["#1a9850","#ffffff","#d73027"], name:"Green–White–Red"},
+  gyr:{stops:["#1a9850","#fee08b","#d73027"], name:"Green–Yellow–Red"},
+  rwg:{stops:["#d73027","#ffffff","#1a9850"], name:"Red–White–Green"},
+  ryg:{stops:["#d73027","#fee08b","#1a9850"], name:"Red–Yellow–Green"},
+  bwr:{stops:["#2166ac","#f7f7f7","#b2182b"], name:"Blue–White–Red"},
+  pwg:{stops:["#762a83","#f7f7f7","#1b7837"], name:"Purple–White–Green"},
+};
+
+const DEFAULTS = {
+  sheet:"", rowDim:"", colDim:"", measure:"",
+  palette:"gwr", centerMode:"auto", centerValue:0,
+  bevel:4, gap:2,
+  showRowLabels:true, showColLabels:true, colAngle:0, axisSize:11, axisColor:"#6b7580",
+  sortRows:"alpha", sortCols:"alpha",
+  showValues:true, denom:"auto", decimals:1, prefix:"", prefixCustom:"",
+  font:'"Tableau Book","Tableau Regular",Arial,sans-serif', valueSize:"auto", valueColor:"auto", boldValues:false,
+  showLegend:true, legendPos:"bottom", legendTitle:"", legendValues:true,
+};
+
+let S = {...DEFAULTS};          // settings
+let inTableau = false;
+let dataRows = [];              // [{r, c, v}]
+let fieldNames = {dims:[], measures:[]};
+let currentSheetName = "";
+let renderQueued = false;
+let unregisterFns = [];
+
+/* ---------------- color helpers ---------------- */
+function hex2rgb(h){h=h.replace("#","");return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)];}
+function lerp(a,b,t){return a+(b-a)*t;}
+function mix(c1,c2,t){const a=hex2rgb(c1),b=hex2rgb(c2);return `rgb(${Math.round(lerp(a[0],b[0],t))},${Math.round(lerp(a[1],b[1],t))},${Math.round(lerp(a[2],b[2],t))})`;}
+function colorFor(v,min,center,max){
+  const p = PALETTES[S.palette] || PALETTES.gwr;
+  if (v==null || isNaN(v)) return "#f0f2f4";
+  if (v <= center){
+    const span = center-min || 1;
+    return mix(p.stops[1], p.stops[0], Math.min(1,Math.max(0,(center-v)/span)));
+  } else {
+    const span = max-center || 1;
+    return mix(p.stops[1], p.stops[2], Math.min(1,Math.max(0,(v-center)/span)));
+  }
+}
+function inkFor(bg){ // auto-contrast text ink
+  const m = bg.match(/\d+/g); if(!m) return "#333b44";
+  const [r,g,b]=m.map(Number);
+  const L = 0.2126*(r/255)**2.2 + 0.7152*(g/255)**2.2 + 0.0722*(b/255)**2.2;
+  return L > 0.35 ? "#333b44" : "#ffffff";
+}
+
+/* ---------------- number formatting ---------------- */
+function fmtValue(v){
+  if (v==null || isNaN(v)) return "";
+  let div=1, suf="";
+  const av=Math.abs(v);
+  const denom = S.denom==="auto" ? (av>=1e9?"B":av>=1e6?"M":av>=1e3?"K":"none") : S.denom;
+  if (denom==="K"){div=1e3;suf="K";} else if(denom==="M"){div=1e6;suf="M";} else if(denom==="B"){div=1e9;suf="B";}
+  const pre = S.prefix==="custom" ? (S.prefixCustom||"") : S.prefix;
+  const sign = v<0 ? "-" : "";
+  const n = Math.abs(v/div).toLocaleString("en-US",{minimumFractionDigits:+S.decimals, maximumFractionDigits:+S.decimals});
+  return sign + pre + n + suf;
+}
+
+/* ---------------- demo data (standalone preview) ---------------- */
+function demoData(){
+  const rows=["Merrill","Morgan Stanley","UBS","Wells Fargo","LPL","Raymond James","Edward Jones","Ameriprise"];
+  const cols=["Large Blend","Large Growth","Large Value","Mid Cap","Small Cap","Core Bond","Core Plus","Short Term","Ultrashort","Muni"];
+  const out=[]; let seed=42;
+  const rnd=()=>{seed=(seed*1103515245+12345)%2147483648; return seed/2147483648;};
+  rows.forEach((r,i)=>cols.forEach((c,j)=>{
+    out.push({r, c, v:(rnd()-0.42)*2*((i%4)+1)*((j%5)+1)*120e6});
+  }));
+  fieldNames={dims:["Platform","Category"],measures:["Net Flow"]};
+  currentSheetName="Demo data";
+  S.rowDim="Platform"; S.colDim="Category"; S.measure="Net Flow";
+  return out;
+}
+
+/* ---------------- tableau plumbing ---------------- */
+async function initTableau(){
+  try{
+    if (typeof tableau === "undefined" || !tableau.extensions){ throw new Error("no api"); }
+    await tableau.extensions.initializeAsync({configure: () => { openPanel(); return {};}});
+    inTableau = true;
+    loadSettings();
+    populateSheetList();
+    await loadData();
+  }catch(e){
+    inTableau = false;
+    dataRows = demoData();
+    setStatus("Demo mode — open in Tableau to connect live data");
+  }
+  buildPanel(); render();
+}
+function loadSettings(){
+  try{
+    const saved = tableau.extensions.settings.get("heatmatrix");
+    if (saved) S = {...DEFAULTS, ...JSON.parse(saved)};
+  }catch(e){}
+}
+function saveSettings(){
+  if(!inTableau) return;
+  try{
+    tableau.extensions.settings.set("heatmatrix", JSON.stringify(S));
+    tableau.extensions.settings.saveAsync();
+  }catch(e){}
+}
+function sheets(){ return inTableau ? tableau.extensions.dashboardContent.dashboard.worksheets : []; }
+function populateSheetList(){
+  const sel = document.getElementById("optSheet");
+  sel.innerHTML="";
+  sheets().forEach(w=>{
+    const o=document.createElement("option"); o.value=w.name; o.textContent=w.name; sel.appendChild(o);
+  });
+  if (S.sheet && [...sel.options].some(o=>o.value===S.sheet)) sel.value=S.sheet;
+  else if (sel.options.length){ S.sheet = sel.options[0].value; }
+}
+async function loadData(){
+  if(!inTableau){ dataRows = demoData(); return; }
+  const ws = sheets().find(w=>w.name===S.sheet) || sheets()[0];
+  if(!ws){ setStatus("No worksheet found on this dashboard"); dataRows=[]; return; }
+  currentSheetName = ws.name;
+
+  // re-arm change listeners
+  unregisterFns.forEach(f=>{try{f();}catch(e){}}); unregisterFns=[];
+  try{
+    unregisterFns.push(ws.addEventListener(tableau.TableauEventType.FilterChanged, ()=>refresh()));
+    unregisterFns.push(ws.addEventListener(tableau.TableauEventType.SummaryDataChanged, ()=>refresh()));
+  }catch(e){}
+
+  const table = await ws.getSummaryDataAsync({maxRows:0, ignoreSelection:true});
+  const cols = table.columns;
+  const dims=[], meas=[];
+  cols.forEach(c=>{
+    (c.dataType==="float"||c.dataType==="int") ? meas.push(c.fieldName) : dims.push(c.fieldName);
+  });
+  fieldNames={dims, measures:meas};
+  if(!dims.includes(S.rowDim)) S.rowDim = dims[0]||"";
+  if(!dims.includes(S.colDim)) S.colDim = dims[1]||dims[0]||"";
+  if(!meas.includes(S.measure)) S.measure = meas[0]||"";
+
+  const iR=cols.findIndex(c=>c.fieldName===S.rowDim);
+  const iC=cols.findIndex(c=>c.fieldName===S.colDim);
+  const iV=cols.findIndex(c=>c.fieldName===S.measure);
+  const agg=new Map();
+  table.data.forEach(row=>{
+    const r=iR>=0?row[iR].formattedValue:"—";
+    const c=iC>=0?row[iC].formattedValue:"—";
+    const v=iV>=0?row[iV].nativeValue:null;
+    const k=r+" "+c;
+    const cur=agg.get(k)||{r,c,v:0,n:0};
+    if(v!=null && !isNaN(v)){cur.v+=+v; cur.n++;}
+    agg.set(k,cur);
+  });
+  dataRows=[...agg.values()];
+  setStatus(`${currentSheetName} · ${dataRows.length} cells · as of load`);
+}
+async function refresh(){ await loadData(); render(); }
+
+/* ---------------- layout + render ---------------- */
+function uniqSorted(list, key, sortMode, sums){
+  let u=[...new Set(list.map(d=>d[key]))];
+  if(sortMode==="alpha") u.sort((a,b)=>a.localeCompare(b));
+  else if(sortMode==="alphaDesc") u.sort((a,b)=>b.localeCompare(a));
+  else{
+    u.sort((a,b)=>(sums.get(b)||0)-(sums.get(a)||0));
+    if(sortMode==="valueAsc") u.reverse();
+  }
+  return u;
+}
+function render(){
+  if(renderQueued) return; renderQueued=true;
+  requestAnimationFrame(()=>{renderQueued=false; draw();});
+}
+function draw(){
+  const host=document.getElementById("matrix");
+  host.innerHTML="";
+  if(!dataRows.length){ host.innerHTML="<div style='color:#9aa3ad;padding:20px'>No data. Pick a worksheet in the format panel (⚙).</div>"; return; }
+
+  const rowSums=new Map(), colSums=new Map();
+  dataRows.forEach(d=>{rowSums.set(d.r,(rowSums.get(d.r)||0)+d.v); colSums.set(d.c,(colSums.get(d.c)||0)+d.v);});
+  const rows=uniqSorted(dataRows,"r",S.sortRows,rowSums);
+  const cols=uniqSorted(dataRows,"c",S.sortCols,colSums);
+  const byKey=new Map(dataRows.map(d=>[d.r+" "+d.c,d.v]));
+
+  const vals=dataRows.map(d=>d.v).filter(v=>v!=null&&!isNaN(v)).sort((a,b)=>a-b);
+  const min=vals[0], max=vals[vals.length-1];
+  let center;
+  if(S.centerMode==="zero") center=0;
+  else if(S.centerMode==="median") center=vals[Math.floor(vals.length/2)];
+  else if(S.centerMode==="custom") center=+S.centerValue||0;
+  else center=(min+max)/2;
+
+  const W=host.clientWidth||host.parentElement.clientWidth, H=host.clientHeight||host.parentElement.clientHeight;
+  const axisPx=+S.axisSize;
+  const rowLabW = S.showRowLabels ? Math.min(180, 8+Math.max(...rows.map(r=>r.length))*axisPx*0.58) : 0;
+  const colLabH = S.showColLabels ? (S.colAngle==0 ? axisPx+10 : S.colAngle==45 ? 58 : 86) : 0;
+  const legendH = (S.showLegend && S.legendPos==="bottom") ? 44 : 0;
+  const legendW = (S.showLegend && S.legendPos==="right") ? 76 : 0;
+
+  const plotW=Math.max(40,W-rowLabW-legendW), plotH=Math.max(40,H-colLabH-legendH);
+  const gap=+S.gap;
+  const cw=(plotW-gap*(cols.length-1))/cols.length;
+  const ch=(plotH-gap*(rows.length-1))/rows.length;
+  const rad=Math.min(+S.bevel, cw/2, ch/2);
+
+  const NS="http://www.w3.org/2000/svg";
+  const svg=document.createElementNS(NS,"svg");
+  svg.setAttribute("width",W); svg.setAttribute("height",H);
+  host.appendChild(svg);
+
+  // column labels
+  if(S.showColLabels){
+    cols.forEach((c,j)=>{
+      const t=document.createElementNS(NS,"text");
+      const x=rowLabW+j*(cw+gap)+cw/2;
+      t.setAttribute("fill",S.axisColor); t.setAttribute("font-size",axisPx);
+      t.setAttribute("font-family",S.font);
+      let label=c.length>18?c.slice(0,17)+"…":c;
+      if(+S.colAngle===0){
+        t.setAttribute("x",x); t.setAttribute("y",colLabH-6); t.setAttribute("text-anchor","middle");
+      }else{
+        const a=+S.colAngle;
+        t.setAttribute("x",x); t.setAttribute("y",colLabH-6);
+        t.setAttribute("text-anchor","start");
+        t.setAttribute("transform",`rotate(${-a} ${x} ${colLabH-6})`);
+        if(a===90){t.setAttribute("text-anchor","start");}
+      }
+      t.textContent=label; svg.appendChild(t);
+    });
+  }
+  // row labels
+  if(S.showRowLabels){
+    rows.forEach((r,i)=>{
+      const t=document.createElementNS(NS,"text");
+      t.setAttribute("x",rowLabW-8); t.setAttribute("y",colLabH+i*(ch+gap)+ch/2+axisPx*0.35);
+      t.setAttribute("text-anchor","end"); t.setAttribute("fill",S.axisColor);
+      t.setAttribute("font-size",axisPx); t.setAttribute("font-family",S.font);
+      t.textContent=r.length>26?r.slice(0,25)+"…":r;
+      svg.appendChild(t);
+    });
+  }
+
+  // cells
+  const tip=document.getElementById("tip");
+  const valueSize = S.valueSize==="auto" ? Math.max(8, Math.min(14, Math.floor(Math.min(cw/5.2, ch/2.4)))) : +S.valueSize;
+  rows.forEach((r,i)=>cols.forEach((c,j)=>{
+    const v=byKey.get(r+" "+c);
+    const x=rowLabW+j*(cw+gap), y=colLabH+i*(ch+gap);
+    const fill=colorFor(v,min,center,max);
+    const rect=document.createElementNS(NS,"rect");
+    rect.setAttribute("x",x); rect.setAttribute("y",y);
+    rect.setAttribute("width",Math.max(1,cw)); rect.setAttribute("height",Math.max(1,ch));
+    rect.setAttribute("rx",rad); rect.setAttribute("ry",rad);
+    rect.setAttribute("fill",fill);
+    rect.style.cursor="default";
+    rect.addEventListener("mousemove",ev=>{
+      tip.style.display="block";
+      tip.querySelector(".t1").textContent=`${r}  ·  ${c}`;
+      tip.querySelector(".t2").textContent= v==null?"No data":fmtValue(v);
+      const tw=tip.offsetWidth, th=tip.offsetHeight;
+      tip.style.left=Math.min(ev.clientX+12, window.innerWidth-tw-6)+"px";
+      tip.style.top=Math.min(ev.clientY+12, window.innerHeight-th-6)+"px";
+      rect.setAttribute("stroke","#333b44"); rect.setAttribute("stroke-width","1.4");
+    });
+    rect.addEventListener("mouseleave",()=>{tip.style.display="none"; rect.removeAttribute("stroke");});
+    svg.appendChild(rect);
+
+    if(S.showValues && v!=null && cw>34 && ch>14){
+      const t=document.createElementNS(NS,"text");
+      t.setAttribute("x",x+cw/2); t.setAttribute("y",y+ch/2+valueSize*0.35);
+      t.setAttribute("text-anchor","middle");
+      t.setAttribute("font-size",valueSize);
+      t.setAttribute("font-family",S.font);
+      if(S.boldValues) t.setAttribute("font-weight","bold");
+      t.setAttribute("fill", S.valueColor==="auto"? inkFor(fill) : S.valueColor);
+      t.style.pointerEvents="none";
+      t.textContent=fmtValue(v);
+      svg.appendChild(t);
+    }
+  }));
+
+  // legend
+  if(S.showLegend){
+    const p=PALETTES[S.palette]||PALETTES.gwr;
+    const gradId="hm-grad";
+    const defs=document.createElementNS(NS,"defs");
+    const grad=document.createElementNS(NS,"linearGradient");
+    grad.setAttribute("id",gradId);
+    if(S.legendPos==="right"){grad.setAttribute("x1","0");grad.setAttribute("y1","1");grad.setAttribute("x2","0");grad.setAttribute("y2","0");}
+    [[0,p.stops[0]],[0.5,p.stops[1]],[1,p.stops[2]]].forEach(([o,ccc])=>{
+      const st=document.createElementNS(NS,"stop");
+      st.setAttribute("offset",o); st.setAttribute("stop-color",ccc); grad.appendChild(st);
+    });
+    defs.appendChild(grad); svg.appendChild(defs);
+
+    const title=(S.legendTitle||S.measure||"");
+    if(S.legendPos==="bottom"){
+      const lw=Math.min(320, plotW*0.7), lx=rowLabW+(plotW-lw)/2, ly=H-30;
+      if(title){
+        const t=document.createElementNS(NS,"text");
+        t.setAttribute("x",rowLabW); t.setAttribute("y",ly+9);
+        t.setAttribute("font-size",10.5); t.setAttribute("fill","#6b7580"); t.setAttribute("font-family",S.font);
+        t.textContent=title; svg.appendChild(t);
+      }
+      const bar=document.createElementNS(NS,"rect");
+      bar.setAttribute("x",lx); bar.setAttribute("y",ly); bar.setAttribute("width",lw); bar.setAttribute("height",12);
+      bar.setAttribute("rx",3); bar.setAttribute("fill",`url(#${gradId})`); bar.setAttribute("stroke","#e3e7eb");
+      svg.appendChild(bar);
+      if(S.legendValues){
+        [[lx,"start",min],[lx+lw/2,"middle",center],[lx+lw,"end",max]].forEach(([xx,anchor,val])=>{
+          const t=document.createElementNS(NS,"text");
+          t.setAttribute("x",xx); t.setAttribute("y",ly+26); t.setAttribute("text-anchor",anchor);
+          t.setAttribute("font-size",10); t.setAttribute("fill","#6b7580"); t.setAttribute("font-family",S.font);
+          t.textContent=fmtValue(val); svg.appendChild(t);
+        });
+      }
+    }else{
+      const lh=Math.min(220,plotH*0.8), lx=W-legendW+14, ly=colLabH+(plotH-lh)/2;
+      const bar=document.createElementNS(NS,"rect");
+      bar.setAttribute("x",lx); bar.setAttribute("y",ly); bar.setAttribute("width",12); bar.setAttribute("height",lh);
+      bar.setAttribute("rx",3); bar.setAttribute("fill",`url(#${gradId})`); bar.setAttribute("stroke","#e3e7eb");
+      svg.appendChild(bar);
+      if(S.legendValues){
+        [[ly,max],[ly+lh/2,center],[ly+lh,min]].forEach(([yy,val])=>{
+          const t=document.createElementNS(NS,"text");
+          t.setAttribute("x",lx+16); t.setAttribute("y",yy+3);
+          t.setAttribute("font-size",10); t.setAttribute("fill","#6b7580"); t.setAttribute("font-family",S.font);
+          t.textContent=fmtValue(val); svg.appendChild(t);
+        });
+      }
+      if(title){
+        const t=document.createElementNS(NS,"text");
+        t.setAttribute("x",lx-2); t.setAttribute("y",ly-10);
+        t.setAttribute("font-size",10.5); t.setAttribute("fill","#6b7580"); t.setAttribute("font-family",S.font);
+        t.textContent=title.length>11?title.slice(0,10)+"…":title; svg.appendChild(t);
+      }
+    }
+  }
+}
+function setStatus(s){document.getElementById("status").textContent=s;}
+
+/* ---------------- format panel ---------------- */
+function openPanel(){document.getElementById("panel").classList.add("open"); document.getElementById("gearBtn").style.display="none"; render();}
+function closePanel(){document.getElementById("panel").classList.remove("open"); document.getElementById("gearBtn").style.display=""; render();}
+function paintPalettePreview(){
+  const p=PALETTES[S.palette]||PALETTES.gwr;
+  const el=document.getElementById("palettePreview");
+  el.innerHTML="";
+  for(let i=0;i<24;i++){
+    const t=i/23; const d=document.createElement("div");
+    d.style.background = t<=0.5 ? mix(p.stops[0],p.stops[1],t*2) : mix(p.stops[1],p.stops[2],(t-0.5)*2);
+    el.appendChild(d);
+  }
+}
+function fillFieldSelects(){
+  const fill=(id,list,cur)=>{
+    const sel=document.getElementById(id); sel.innerHTML="";
+    list.forEach(f=>{const o=document.createElement("option");o.value=f;o.textContent=f;sel.appendChild(o);});
+    if(list.includes(cur)) sel.value=cur;
+  };
+  fill("optRowDim",fieldNames.dims,S.rowDim);
+  fill("optColDim",fieldNames.dims,S.colDim);
+  fill("optMeasure",fieldNames.measures,S.measure);
+}
+function buildPanel(){
+  // tabs
+  document.querySelectorAll(".tab").forEach(tab=>{
+    tab.addEventListener("click",()=>{
+      document.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"));
+      document.querySelectorAll(".sec").forEach(s=>s.classList.remove("active"));
+      tab.classList.add("active");
+      document.getElementById("sec-"+tab.dataset.sec).classList.add("active");
+    });
+  });
+  document.getElementById("gearBtn").addEventListener("click",openPanel);
+  document.getElementById("closeBtn").addEventListener("click",closePanel);
+
+  fillFieldSelects(); paintPalettePreview();
+
+  // set initial widget values from S
+  const set=(id,val)=>{const el=document.getElementById(id); if(!el)return; if(el.type==="checkbox")el.checked=!!val; else el.value=val;};
+  set("optPalette",S.palette); set("optCenterMode",S.centerMode); set("optCenterValue",S.centerValue);
+  set("optBevel",S.bevel); set("optGap",S.gap);
+  set("optShowRowLabels",S.showRowLabels); set("optShowColLabels",S.showColLabels);
+  set("optColAngle",S.colAngle); set("optAxisSize",S.axisSize); set("optAxisColor",S.axisColor);
+  set("optSortRows",S.sortRows); set("optSortCols",S.sortCols);
+  set("optShowValues",S.showValues); set("optDenom",S.denom); set("optDecimals",S.decimals);
+  set("optPrefix",S.prefix||""); set("optPrefixCustom",S.prefixCustom);
+  set("optFont",S.font); set("optValueSize",S.valueSize); set("optValueColor",S.valueColor); set("optBoldValues",S.boldValues);
+  set("optShowLegend",S.showLegend); set("optLegendPos",S.legendPos); set("optLegendTitle",S.legendTitle); set("optLegendValues",S.legendValues);
+  document.getElementById("outBevel").textContent=S.bevel+"px";
+  document.getElementById("outGap").textContent=S.gap+"px";
+
+  // change handlers
+  const on=(id,key,opts={})=>{
+    const el=document.getElementById(id); if(!el)return;
+    el.addEventListener(opts.event||"change",async ()=>{
+      S[key] = el.type==="checkbox" ? el.checked : el.value;
+      if(opts.numeric) S[key]=+S[key];
+      if(opts.out) document.getElementById(opts.out).textContent=S[key]+"px";
+      if(opts.repaint) paintPalettePreview();
+      saveSettings();
+      if(opts.reload){ await loadData(); fillFieldSelects(); }
+      render();
+    });
+  };
+  on("optSheet","sheet",{reload:true});
+  on("optRowDim","rowDim",{reload:true});
+  on("optColDim","colDim",{reload:true});
+  on("optMeasure","measure",{reload:true});
+  on("optPalette","palette",{repaint:true});
+  on("optCenterMode","centerMode");
+  on("optCenterValue","centerValue",{numeric:true});
+  on("optBevel","bevel",{event:"input",numeric:true,out:"outBevel"});
+  on("optGap","gap",{event:"input",numeric:true,out:"outGap"});
+  on("optShowRowLabels","showRowLabels"); on("optShowColLabels","showColLabels");
+  on("optColAngle","colAngle",{numeric:true}); on("optAxisSize","axisSize",{numeric:true}); on("optAxisColor","axisColor");
+  on("optSortRows","sortRows"); on("optSortCols","sortCols");
+  on("optShowValues","showValues"); on("optDenom","denom"); on("optDecimals","decimals",{numeric:true});
+  on("optPrefix","prefix"); on("optPrefixCustom","prefixCustom");
+  on("optFont","font"); on("optValueSize","valueSize"); on("optValueColor","valueColor"); on("optBoldValues","boldValues");
+  on("optShowLegend","showLegend"); on("optLegendPos","legendPos"); on("optLegendTitle","legendTitle",{event:"input"});
+  on("optLegendValues","legendValues");
+}
+
+window.addEventListener("resize",render);
+document.addEventListener("DOMContentLoaded",initTableau);
+</script>
+</body>
+</html>
