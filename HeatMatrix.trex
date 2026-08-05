@@ -7,8 +7,8 @@
     <author name="Maximilian Sparshatt" email="max.sparshatt@wealthvista.com" organization="WealthVista" website="https://www.wealthvista.com"/>
     <min-api-version>1.4</min-api-version>
     <source-location>
-      <url>http://localhost:8765/index.html</url>
-    </source-location>
+      <url>https://sparshatt.github.io/tableau-extensions/heatmatrix/v1/index.html</url>
+</source-location>
     <icon>iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAP0lEQVR4nGP8//8/AyWAiYFCMGoAAwODAgMDw38i8H+GBhgNAxg1gIFhNAwYGEbDgIFhNAwYGEbDgIFhOIQBAJTkI/FVBl1FAAAAAElFTkSuQmCC</icon>
     <permissions>
       <permission>full data</permission>
